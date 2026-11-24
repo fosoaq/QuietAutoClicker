@@ -16,6 +16,7 @@
 - `QuietAutoClicker-Linux` — Linux binary (portable)
 - `QuietAutoClicker-Linux-x86_64.AppImage` — Portable AppImage for Linux
 - `QuietAutoClicker-Windows.exe` — Windows executable
+- macOS — [build from source](#building-from-source)
 
 <h2 align="center">Notes</h2>
 
@@ -29,6 +30,11 @@
 - **X11**: mouse and key clicking work; global hotkeys are not implemented via portal on X11.
 - **GNOME/Hyprland**: native Wayland key injection varies by compositor. Basic clicking works; some native Wayland apps may not receive key combos depending on compositor.
 - **Windows**: maintenance-only (bug fixes, smoke test per release).
+- **macOS**: clicking needs Accessibility access (System Settings → Privacy &
+  Security → Accessibility); the app asks for it on first launch. Global hotkeys
+  work without it. On laptops press `Fn`+`F6`, or pick another hotkey in the app.
+  In captured combos `Alt` is Option and `Meta` is Command. Keys are physical
+  (US layout positions), so binds do not depend on the active keyboard layout.
 - **Persistence**: only sequence points are saved (`sequence.json`). All other settings reset on launch.
 
 <h2 align="center">FAQ</h2>
@@ -56,6 +62,14 @@ For Windows cross-build:
 ```bash
 cargo build --release --target x86_64-pc-windows-gnu
 ```
+
+On macOS, build `dist/QuietAutoClicker.app`:
+```bash
+./scripts/bundle-macos.sh
+```
+The app is signed ad hoc, so macOS treats every rebuild as a new app. If clicking
+stops working after a rebuild, remove the old entry from the Accessibility list
+and grant access again, or sign with a stable certificate through `SIGN_IDENTITY`.
 
 <h2 align="center">Credits</h2>
 
