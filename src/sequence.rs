@@ -1,4 +1,4 @@
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,19 +50,33 @@ pub fn get_root_dir() -> PathBuf {
     ROOT.get_or_init(resolve_root_dir).clone()
 }
 
+#[cfg(not(target_os = "macos"))]
 fn execute_dir() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
 }
 
+/// macOS keeps runtime files out of the app bundle: writing inside it would
+/// break the code signature.
+#[cfg(target_os = "macos")]
+fn resolve_root_dir() -> PathBuf {
+    let dir = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join("Library/Application Support/QuietAutoClicker");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+#[cfg(not(target_os = "macos"))]
 fn resolve_root_dir() -> PathBuf {
     if let Some(dir) = execute_dir() {
         #[cfg(windows)]
         {
             return dir;
         }
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
             if dir_writable(&dir) {
                 return dir;
@@ -77,21 +91,21 @@ fn fallback_dir() -> PathBuf {
     std::env::current_dir().unwrap_or_default()
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn fallback_dir() -> PathBuf {
     let dir = xdg_data_base().join("quietautoclicker");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn xdg_data_base() -> PathBuf {
     let xdg = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
     let home = std::env::var_os("HOME").map(PathBuf::from);
     xdg_data_base_from(xdg.as_deref(), home.as_deref())
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn xdg_data_base_from(xdg: Option<&Path>, home: Option<&Path>) -> PathBuf {
     match xdg.filter(|p| !p.as_os_str().is_empty()) {
         Some(base) => base.to_path_buf(),
@@ -99,7 +113,7 @@ fn xdg_data_base_from(xdg: Option<&Path>, home: Option<&Path>) -> PathBuf {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn dir_writable(dir: &Path) -> bool {
     // Probe: create + remove a zero-byte file. Reliable where permission bits
     // lie (ACLs) or where creation always fails — a read-only AppImage squashfs,
@@ -245,35 +259,35 @@ mod tests {
         assert!(cfg.points.is_empty());
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn xdg_data_base_uses_xdg_when_set() {
         let base = xdg_data_base_from(Some(Path::new("/custom/data")), Some(Path::new("/home/u")));
         assert_eq!(base, PathBuf::from("/custom/data"));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn xdg_data_base_defaults_to_home_local_share() {
         let base = xdg_data_base_from(None, Some(Path::new("/home/u")));
         assert_eq!(base, PathBuf::from("/home/u/.local/share"));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn xdg_data_base_empty_xdg_falls_back() {
         let base = xdg_data_base_from(Some(Path::new("")), Some(Path::new("/home/u")));
         assert_eq!(base, PathBuf::from("/home/u/.local/share"));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn writable_dir_detected_as_portable() {
         let cwd = std::env::current_dir().unwrap();
         assert!(dir_writable(&cwd));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn read_only_dir_not_portable() {
         // Kernel filesystems reject file creation even for root.

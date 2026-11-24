@@ -9,17 +9,19 @@ mod engine;
 mod sequence;
 mod ui;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 mod hotkeys;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 mod kwincursor;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]
 mod listener;
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "linux")]
 mod wayland_fake_kb;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 mod wayland_kb;
 
 fn main() -> anyhow::Result<()> {
@@ -48,7 +50,7 @@ fn main() -> anyhow::Result<()> {
 
     let shared = app::SharedState::new();
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     linux::install_linux_integration();
 
     // Wipe the per-launch diagnostic log BEFORE anything writes to it (the
@@ -59,18 +61,33 @@ fn main() -> anyhow::Result<()> {
 
     #[cfg(windows)]
     listener::start(Arc::clone(&shared));
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     hotkeys::start(Arc::clone(&shared));
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     kwincursor::start();
+    #[cfg(target_os = "macos")]
+    {
+        macos::keep_awake_in_background();
+        macos::request_access();
+    }
     let engine_handle = engine::start(Arc::clone(&shared));
 
     let ui = ui::setup(Arc::clone(&shared))?;
 
+    // AppKit/Carbon hooks need the NSApplication that the first window creates.
+    #[cfg(target_os = "macos")]
+    {
+        macos::hotkeys::install(Arc::clone(&shared));
+        macos::install_key_capture(Arc::clone(&shared));
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            macos::install_drag_support(mtm);
+        }
+    }
+
     // Wayland app_id: KWin resolves the window to a .desktop via this id, so
     // without it the taskbar shows a generic icon. set_xdg_app_id is Wayland/
     // X11-only (cfg(unix) in slint) and must run before the window is shown.
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     let _ = slint::set_xdg_app_id("QuietAutoClicker");
 
     // Native window layer is fully transparent (the rounded Rectangle in
@@ -89,14 +106,19 @@ fn main() -> anyhow::Result<()> {
     // match that id (and the binary); the legacy comment claimed no runtime
     // setter existed in Slint 1.17.1 — it does, so the app_id is now explicit.
 
-    let weak = ui.as_weak();
-    ui.on_drag_window(move || {
-        if let Some(ui) = weak.upgrade() {
-            ui.window().with_winit_window(|w| {
-                let _ = w.drag_window();
-            });
-        }
-    });
+    #[cfg(target_os = "macos")]
+    ui.on_drag_window(macos::drag_window);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let weak = ui.as_weak();
+        ui.on_drag_window(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.window().with_winit_window(|w| {
+                    let _ = w.drag_window();
+                });
+            }
+        });
+    }
 
     ui.on_close_window(move || {
         let _ = slint::quit_event_loop();
@@ -144,7 +166,7 @@ fn main() -> anyhow::Result<()> {
     shared.signal_stop();
     let _ = engine_handle.join();
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     hotkeys::shutdown();
 
     Ok(())
@@ -255,7 +277,20 @@ fn set_window_always_top(ui: &impl ComponentHandle, always_on_top: bool) {
     });
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn set_window_always_top(ui: &impl ComponentHandle, always_on_top: bool) {
+    use slint::winit_030::winit::window::WindowLevel;
+
+    ui.window().with_winit_window(|w| {
+        w.set_window_level(if always_on_top {
+            WindowLevel::AlwaysOnTop
+        } else {
+            WindowLevel::Normal
+        });
+    });
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn set_window_always_top(_ui: &impl ComponentHandle, _always_on_top: bool) {}
 
 fn center_window(ui: &impl ComponentHandle) {

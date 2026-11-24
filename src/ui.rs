@@ -316,7 +316,22 @@ fn start_poll_timer(
                 .read()
                 .map(|e| e.is_empty())
                 .unwrap_or(false);
+        #[cfg(target_os = "macos")]
+        let (listener_ok, seq_listener_ok) = {
+            let armed =
+                |f: &std::sync::atomic::AtomicBool| f.load(std::sync::atomic::Ordering::Relaxed);
+            let suspended = armed(&shared.hotkey_capture_active)
+                || armed(&shared.sequence_hotkey_capture_active)
+                || armed(&shared.key_capture_active);
+            let trusted = crate::macos::is_trusted();
+            if window.get_needs_access() == trusted {
+                window.set_needs_access(!trusted);
+            }
+            crate::macos::hotkeys::sync(&settings.hotkey, &settings.sequence_hotkey, suspended)
+        };
         #[cfg(windows)]
+        let seq_listener_ok = listener_ok;
+        #[cfg(any(windows, target_os = "macos"))]
         {
             let cur_hotkey = if listener_ok {
                 settings.hotkey.clone()
@@ -339,7 +354,7 @@ fn start_poll_timer(
             }
             window.set_hotkey_editable(true);
         }
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
             // Linux binds live in KDE System Settings via the GlobalShortcuts
             // portal (see hotkeys.rs). Show the factory default until the
@@ -376,7 +391,7 @@ fn start_poll_timer(
             window.set_hotkey_editable(false);
         }
 
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             let capturing = shared
                 .hotkey_capture_active
@@ -389,9 +404,9 @@ fn start_poll_timer(
         // Sync sequence hotkey (bind for adding sequence points): editable and
         // in-app capturable on Windows, read-only on Linux (KDE System Settings).
         let seq_label: String;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
-            if listener_ok {
+            if seq_listener_ok {
                 seq_label = settings.sequence_hotkey.clone();
             } else {
                 seq_label = "unavailable".into();
@@ -408,7 +423,7 @@ fn start_poll_timer(
                 window.set_is_capturing_sequence_hotkey(capturing_seq_hk);
             }
         }
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
             let binding = shared
                 .kg_binding_capture
@@ -608,11 +623,11 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
     {
         let shared_cap = Arc::clone(&shared);
         window.on_request_capture_hotkey(move || {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             shared_cap
                 .hotkey_capture_active
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             {
                 let _ = &shared_cap;
                 // On Linux the binding is set in KDE System Settings, nothing to capture.
@@ -624,7 +639,7 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
         let shared_clr = Arc::clone(&shared);
         let weak_clr = window.as_weak();
         window.on_clear_hotkey(move || {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             {
                 if let Ok(mut s) = shared_clr.settings.write() {
                     if s.hotkey == "F6" {
@@ -636,7 +651,7 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
                     ui.set_hotkey("F6".into());
                 }
             }
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             let _ = (&shared_clr, &weak_clr);
         });
     }
@@ -644,11 +659,11 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
     {
         let shared_seq = Arc::clone(&shared);
         window.on_request_capture_sequence_hotkey(move || {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             shared_seq
                 .sequence_hotkey_capture_active
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             let _ = &shared_seq;
         });
     }
@@ -657,7 +672,7 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
         let shared_clr = Arc::clone(&shared);
         let weak_clr = window.as_weak();
         window.on_clear_sequence_hotkey(move || {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             {
                 if let Ok(mut s) = shared_clr.settings.write() {
                     if s.sequence_hotkey == "F7" {
@@ -669,7 +684,7 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
                     ui.set_sequence_hotkey("F7".into());
                 }
             }
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             let _ = (&shared_clr, &weak_clr);
         });
     }
@@ -678,10 +693,13 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
         // Linux (KDE Wayland): open the KDE System Settings shortcut page for
         // our component instead of in-app hotkey capture.
         window.on_open_shortcut_settings(move || {
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             crate::hotkeys::open_shortcut_settings();
         });
     }
+
+    #[cfg(target_os = "macos")]
+    window.on_open_access_settings(crate::macos::open_accessibility_settings);
 
     {
         let shared_key = Arc::clone(&shared);
@@ -742,12 +760,13 @@ pub fn setup(shared: Arc<SharedState>) -> Result<MainWindow, slint::PlatformErro
                     "capture-raw: text='{}' repeat={repeat} ctrl={ctrl} shift={shift} alt={alt} meta={meta} armed={armed}",
                     text.as_str().escape_default(),
                 ));
-                if !armed { return false; }
+                // macOS captures keycodes instead (see macos::install_key_capture).
+                if !armed || cfg!(target_os = "macos") { return false; }
                 if repeat {
                     crate::sequence::write_diag("capture-raw: -> reject repeat");
                     return false;
                 }
-                #[cfg(unix)]
+                #[cfg(target_os = "linux")]
                 {
                     // On KDE Wayland lone modifier keypresses arrive as a C0
                     // control char (Ctrl->\x11->'Q', Shift->\x10->'P',

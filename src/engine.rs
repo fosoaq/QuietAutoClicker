@@ -4,7 +4,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(not(target_os = "macos"))]
 use enigo::{Button, Coordinate, Direction, Enigo, InputError, Key, Keyboard, Mouse, Settings};
+
+#[cfg(target_os = "macos")]
+use crate::macos::input::{Button, Coordinate, Direction, Enigo, InputError, Key, Settings};
 
 use crate::app::{self, AppSettings, SharedState};
 
@@ -27,7 +31,7 @@ fn limit_reached(elapsed_secs: u64, limit_secs: u64) -> bool {
 /// go through `Unicode`; named specials map to enigo's variants so space,
 /// backspace, enter, arrows, and F-keys all work.
 fn key_name_to_enigo(name: &str) -> Option<Key> {
-    use enigo::Key as E;
+    use Key as E;
     let e = match name {
         "Space" => return Some(E::Unicode(' ')),
         "Enter" => E::Return,
@@ -145,7 +149,7 @@ fn perform_click(enigo: &mut Enigo, settings: &AppSettings) -> Result<(), InputE
             // apps never see those keys. Any failure (portal-less session, no
             // virtual-keyboard protocol) falls back to enigo below, which
             // still works for Xwayland windows.
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             {
                 let (mods, main, _) = crate::wayland_kb::parse_combo(&settings.click_key);
                 let vk_ok = if crate::wayland_kb::is_available() {

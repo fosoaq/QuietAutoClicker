@@ -156,9 +156,9 @@ pub struct AppSettings {
     // representable, unlike a plain char. Modifiers are canonicalized by capture
     // to the fixed Ctrl -> Shift -> Alt -> Meta order.
     pub click_key: String,
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub hotkey: String,
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub sequence_hotkey: String,
     pub theme_dark: bool,
     pub always_on_top: bool,
@@ -224,7 +224,7 @@ impl Default for AppSettings {
 pub struct SharedState {
     pub active: AtomicBool,
     pub stop_flag: AtomicBool,
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub hotkey_capture_active: AtomicBool,
     pub sequence_active: AtomicBool,
     pub advanced_mode: AtomicBool,
@@ -233,20 +233,20 @@ pub struct SharedState {
     pub sequence_smooth: AtomicBool,
     pub sequence_smooth_ms: AtomicU64,
     pub settings: RwLock<AppSettings>,
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub use_kglobalaccel: AtomicBool,
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub kg_binding_toggle: RwLock<String>,
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub kg_binding_capture: RwLock<String>,
     // True once the portal has reported the binding for this action at least
     // once (even as empty -> the user cleared it). Before that the UI shows the
     // factory default instead of a misleading "None".
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub kg_binding_toggle_valid: AtomicBool,
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub kg_binding_capture_valid: AtomicBool,
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub sequence_hotkey_capture_active: AtomicBool,
     // A click-key capture is in progress: the next physical key (or the next
     // in-app key press on Linux / Window-fallback) becomes the auto-click key.
@@ -255,11 +255,11 @@ pub struct SharedState {
     // grab callback (heartbeat), whether the hook is up, and the failure text if
     // Enigo::new/rdev::grab died. Lets the UI show "unavailable" instead of a
     // hotkey that can never be captured, and feeds qac_debug.log.
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub listener_events: AtomicU64,
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub listener_ready: AtomicBool,
-    #[cfg_attr(unix, allow(dead_code))]
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub listener_error: RwLock<String>,
 }
 

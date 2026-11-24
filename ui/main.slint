@@ -293,6 +293,8 @@ export component MainWindow inherits Window {
     in-out property <bool> sequence-hotkey-editable: true;
     in-out property <bool> is-always-on-top: true;
     in-out property <bool> advanced-mode;
+    // macOS: Accessibility access is missing, clicks would be dropped.
+    in property <bool> needs-access: false;
     in-out property <[int]> sequence-points-x: [];
     in-out property <[int]> sequence-points-y: [];
     in-out property <[int]> sequence-points-clicks: [];
@@ -336,6 +338,7 @@ export component MainWindow inherits Window {
     callback request-capture-key();
     callback reset-click-key();
     callback open-shortcut-settings();
+    callback open-access-settings();
     callback capture-input(string, bool, bool, bool, bool, bool) -> bool;
 
     forward-focus: key-focus;
@@ -542,6 +545,18 @@ if !root.ui-reset : Rectangle {
                 VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
+
+                    if root.needs-access : Text {
+                        text: "Allow Accessibility access to start clicking";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: #ff756b;
+                        horizontal-alignment: center;
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.open-access-settings(); }
+                        }
+                    }
 
                     if (rate-input-mode == 0) : ControlBox {
                         is-dark-theme: root.is-dark-theme;
