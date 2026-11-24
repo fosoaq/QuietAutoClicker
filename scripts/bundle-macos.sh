@@ -42,5 +42,7 @@ cat > "$app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-codesign --force --sign "${SIGN_IDENTITY:--}" "$app"
+# Hardened runtime keeps other processes from injecting code into an app that
+# holds Accessibility access.
+codesign --force --options runtime --sign "${SIGN_IDENTITY:--}" "$app"
 echo "Built $app"

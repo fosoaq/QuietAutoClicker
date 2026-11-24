@@ -83,6 +83,23 @@ fn capturing(shared: &SharedState) -> bool {
     .any(|f| f.load(Ordering::Relaxed))
 }
 
+/// Give the captured combo to whichever chip is waiting for it.
+fn store_capture(shared: &SharedState, combo: String) {
+    let Ok(mut s) = shared.settings.write() else {
+        return;
+    };
+    let take = |flag: &AtomicBool| flag.swap(false, Ordering::Relaxed);
+    if take(&shared.hotkey_capture_active) {
+        s.hotkey = combo.clone();
+    }
+    if take(&shared.sequence_hotkey_capture_active) {
+        s.sequence_hotkey = combo.clone();
+    }
+    if take(&shared.key_capture_active) {
+        s.click_key = combo;
+    }
+}
+
 /// Capture key presses for the bind chips. Reads keycodes rather than typed
 /// text, so it works under any keyboard layout and with Option held. A local
 /// monitor only sees this app's own events and needs no permission.
@@ -101,18 +118,7 @@ pub fn install_key_capture(shared: Arc<SharedState>) {
         };
         if !ev.isARepeat() {
             if let Some(combo) = keys::format_combo(ev.keyCode(), mods) {
-                if let Ok(mut s) = shared.settings.write() {
-                    let take = |flag: &AtomicBool| flag.swap(false, Ordering::Relaxed);
-                    if take(&shared.hotkey_capture_active) {
-                        s.hotkey = combo.clone();
-                    }
-                    if take(&shared.sequence_hotkey_capture_active) {
-                        s.sequence_hotkey = combo.clone();
-                    }
-                    if take(&shared.key_capture_active) {
-                        s.click_key = combo;
-                    }
-                }
+                store_capture(&shared, combo);
             }
         }
         std::ptr::null_mut()
@@ -177,4 +183,25 @@ pub fn drag_window() {
             d.moving = true;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_goes_only_to_the_armed_chip() {
+        let shared = SharedState::new();
+        assert!(!capturing(&shared));
+        shared.hotkey_capture_active.store(true, Ordering::Relaxed);
+        assert!(capturing(&shared));
+        store_capture(&shared, "F8".into());
+        assert!(!capturing(&shared));
+        let s = shared.settings.read().unwrap();
+        assert_eq!(
+            (s.hotkey.as_str(), s.sequence_hotkey.as_str()),
+            ("F8", "F7")
+        );
+        assert_eq!(s.click_key, "A");
+    }
 }

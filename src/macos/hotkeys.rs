@@ -245,3 +245,33 @@ pub fn sync(toggle: &str, capture: &str, suspended: bool) -> (bool, bool) {
         (!t.handle.is_null(), !c.handle.is_null())
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggle_press_stops_a_running_clicker() {
+        let shared = SharedState::new();
+        shared.set_active(true);
+        toggle_pressed(&shared);
+        assert!(!shared.is_active());
+    }
+
+    #[test]
+    fn release_stops_only_in_hold_mode() {
+        let shared = SharedState::new();
+        shared.set_active(true);
+        toggle_released(&shared);
+        assert!(shared.is_active());
+        shared.settings.write().unwrap().activation_mode = ActivationMode::Hold;
+        toggle_released(&shared);
+        assert!(!shared.is_active());
+    }
+
+    #[test]
+    fn carbon_modifier_bits() {
+        let (_, m) = keys::parse_combo("Ctrl+Shift+Alt+Meta+A").unwrap();
+        assert_eq!(carbon_mods(m), 0x1000 | 0x200 | 0x800 | 0x100);
+    }
+}
